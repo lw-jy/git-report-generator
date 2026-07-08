@@ -8,6 +8,10 @@ const reportSchema = new mongoose.Schema(
     ghRepo: { type: String, default: '' },
     // 多仓库列表（新增）
     ghRepos: { type: [String], default: [] },
+    // 平台: github / gitlab
+    platform: { type: String, default: 'github' },
+    // GitLab 自托管地址
+    gitLabUrl: { type: String, default: '' },
     // 报告类型: daily / weekly
     reportType: { type: String, enum: ['daily', 'weekly'], required: true },
     // 时间范围标识: today / 3days / week / 2weeks

@@ -12,6 +12,7 @@ import OpenAI from 'openai';
  * @param {string} params.ghUser    - GitHub 用户名
  * @param {string} params.ghRepo    - 仓库名（汇总）
  * @param {string[]} params.repos   - 所有仓库列表
+ * @param {string} [params.customPrompt] - 用户自定义 Prompt（留空使用默认）
  * @returns {Promise<string>} 生成的 Markdown 报告
  */
 export async function generateReport({
@@ -23,6 +24,7 @@ export async function generateReport({
   ghUser,
   ghRepo,
   repos = [],
+  customPrompt,
 }) {
   const client = new OpenAI({
     apiKey: aiKey,
@@ -51,31 +53,43 @@ export async function generateReport({
     ? `- 相关仓库: ${repos.join('、')}`
     : '';
 
-  const prompt = `你是一个专业的 Git 报告生成器。请根据以下 commit 记录，生成一份结构化的 ${typeLabel}。
+  // === 系统上下文（始终自动带上，无需用户填写） ===
+  const systemContext = `你是一个专业的 Git 报告生成器。请根据以下 ${typeLabel} 的 commit 记录，为 ${ghUser} 生成工作报告。
 
 ## 基本信息
 - 作者: ${ghUser}
 ${reposInfo}
-- 日期: ${now}
 - 报告类型: ${typeLabel}
+- 日期: ${now}
 - 涉及仓库: ${repos.length > 0 ? repos.length : 1} 个
 - Commit 数量: ${commits.length}
 
 ## Commit 记录
-${commitText || '（无 commit 记录）'}
+${commitText || '（无 commit 记录）'}`;
 
-## 报告要求
-请生成包含以下章节的 Markdown 报告：
+  // === 输出格式（用户自定义，或使用默认） ===
+  let formatInstruction;
+  if (customPrompt && customPrompt.trim()) {
+    formatInstruction = customPrompt.trim();
+    console.log(`📝 使用自定义输出格式生成${typeLabel}...`);
+  } else {
+    formatInstruction =
+      `请生成包含以下章节的 Markdown 报告：
 
 1. **概述** — 本次周期内工作的总体说明
 2. **功能开发** — 新功能、特性相关的变更（如有）
 3. **Bug 修复** — 修复的问题和缺陷（如有）
 4. **代码优化** — 重构、性能优化、技术债务清理（如有）
-5. **文档与配置** — 文档更新、配置变更（如有）
-6. **其他变更** — 上述未涵盖的变更（如有）
-7. **总结与计划** — 简要总结和后续工作展望
+5. **其他变更** — 上述未涵盖的变更（如有）
+6. **总结与计划** — 简要总结和后续工作展望
 
 请使用中文输出，保持专业、清晰、简洁。每项变更尽量标注来自哪个仓库，并附上 commit 链接（用 commit SHA 前 7 位作为标识）。`;
+  }
+
+  const prompt = `${systemContext}
+
+## 输出要求
+${formatInstruction}`;
 
   console.log(`🤖 正在调用 AI (${aiModel}) 生成${typeLabel}...`);
 

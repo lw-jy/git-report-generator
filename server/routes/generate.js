@@ -1,8 +1,16 @@
 import { Router } from 'express';
 import Report from '../models/Report.js';
 import { fetchCommits } from '../services/github.js';
+import { fetchGitLabCommits } from '../services/gitlab.js';
 import { generateReport } from '../services/openai.js';
 import { getDateRange } from '../services/date-utils.js';
+
+/**
+ * 根据平台获取对应的 fetchCommits 函数
+ */
+function getFetcher(platform) {
+  return platform === 'gitlab' ? fetchGitLabCommits : fetchCommits;
+}
 
 const router = Router();
 
@@ -34,9 +42,15 @@ router.post('/generate', async (req, res) => {
     const {
       ghToken, ghUser,
       ghRepos, ghRepo,  // ghRepos 是新格式，ghRepo 是旧格式兼容
+      platform, gitLabUrl,
+      commitFilters,    // 提交过滤关键词
+      customPrompt,     // 自定义 Prompt
       aiKey, aiBaseUrl, aiModel,
     } = config;
     const { timeRange, reportType } = options;
+
+    // 确定平台（默认 GitHub）
+    const activePlatform = platform || 'github';
 
     // 兼容旧数据：ghRepo → ghRepos
     const repos = Array.isArray(ghRepos) && ghRepos.length > 0
@@ -45,11 +59,13 @@ router.post('/generate', async (req, res) => {
         ? [ghRepo]
         : [];
 
+    const platformLabel = activePlatform === 'github' ? 'GitHub' : 'GitLab';
+
     if (!ghToken) {
-      return res.status(400).json({ message: '请配置 GitHub Token' });
+      return res.status(400).json({ message: `请配置 ${platformLabel} Token` });
     }
     if (!ghUser) {
-      return res.status(400).json({ message: '请配置 GitHub 用户名' });
+      return res.status(400).json({ message: `请配置 ${platformLabel} 用户名` });
     }
     if (repos.length === 0) {
       return res.status(400).json({ message: '请添加至少一个仓库' });
@@ -79,16 +95,21 @@ router.post('/generate', async (req, res) => {
     // ---- 1. 并发拉取所有仓库的 Commit 记录 ----
     console.log('\n═══════════════════════════════════════');
     console.log('📋 开始生成报告');
-    console.log(`   👤 ${ghUser} | 📦 ${repos.length} 个仓库: ${repos.join(', ')}`);
+    console.log(`   🔧 ${platformLabel} | 👤 ${ghUser} | 📦 ${repos.length} 个仓库: ${repos.join(', ')}`);
     console.log(`   ⏱ ${timeRange} | ${reportType}`);
     console.log(`   📅 ${since.toISOString()} ~ ${until.toISOString()}`);
     console.log(`   🤖 ${aiModel}`);
 
+    const fetcher = getFetcher(activePlatform);
+
     const allResults = await Promise.allSettled(
-      repos.map((repo) =>
-        fetchCommits({ ghToken, ghUser, ghRepo: repo, timeRange })
-          .then((commits) => ({ repo, commits }))
-      )
+      repos.map((repo) => {
+        const params = { ghToken, ghUser, ghRepo: repo, timeRange };
+        if (activePlatform !== 'github') {
+          params.baseUrl = gitLabUrl || undefined;
+        }
+        return fetcher(params).then((commits) => ({ repo, commits }));
+      })
     );
 
     // 收集成功的结果，记录失败的仓库
@@ -114,7 +135,19 @@ router.post('/generate', async (req, res) => {
     // 按时间排序（最新的在前）
     allCommits.sort((a, b) => new Date(b.authorDate) - new Date(a.authorDate));
 
-    console.log(`   📊 共 ${allCommits.length} 条 commits（来自 ${repos.length} 个仓库）`);
+    // ---- 按关键词过滤 ----
+    const filters = Array.isArray(commitFilters) ? commitFilters : [];
+    let filteredCount = 0;
+    if (filters.length > 0) {
+      const before = allCommits.length;
+      allCommits = allCommits.filter((c) => {
+        const msg = c.message || '';
+        return !filters.some((f) => msg.toLowerCase().includes(f.toLowerCase()));
+      });
+      filteredCount = before - allCommits.length;
+    }
+
+    console.log(`   📊 共 ${allCommits.length} 条 commits${filters.length > 0 ? `（已过滤 ${filteredCount} 条）` : ''}（来自 ${repos.length} 个仓库）`);
 
     if (allCommits.length === 0 && failedRepos.length > 0) {
       return res.status(502).json({
@@ -127,6 +160,8 @@ router.post('/generate', async (req, res) => {
       ghUser,
       ghRepo: repos.join(', '),
       ghRepos: repos,
+      platform: activePlatform,
+      gitLabUrl: activePlatform !== 'github' && gitLabUrl ? gitLabUrl : '',
       reportType,
       timeRange,
       startDate: since,
@@ -149,6 +184,7 @@ router.post('/generate', async (req, res) => {
         ghUser,
         ghRepo: repoContext,
         repos,
+        customPrompt,
       });
     } catch (aiErr) {
       report.status = 'failed';
@@ -181,6 +217,7 @@ router.post('/generate', async (req, res) => {
       timeRange: report.timeRange,
       repos,
       commitCount: allCommits.length,
+      filteredCount: filteredCount || 0,
       failedRepos: failedRepos.length > 0 ? failedRepos : undefined,
       createdAt: report.createdAt,
       elapsed,

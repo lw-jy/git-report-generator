@@ -1,8 +1,12 @@
 import 'dotenv/config';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import express from 'express';
 import cors from 'cors';
 import { connectDB } from './db.js';
 import apiRouter from './routes/generate.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -17,21 +21,23 @@ app.use((req, _res, next) => {
   next();
 });
 
-// ---- 路由 ----
+// ---- API 路由（优先于静态文件） ----
 app.use('/api', apiRouter);
 
-// 健康检查
-app.get('/api/health', (_req, res) => {
-  res.json({
-    status: 'ok',
-    time: new Date().toISOString(),
-    uptime: process.uptime(),
-  });
+// ---- 生产环境：提供前端静态文件 ----
+const distPath = path.resolve(__dirname, '../dist');
+app.use(express.static(distPath));
+
+// SPA fallback：非 API 请求返回 index.html
+app.get('*', (_req, res) => {
+  res.sendFile(path.join(distPath, 'index.html'));
 });
 
-// ---- 404 ----
+// ---- 404 处理（仅 API 路由未匹配时） ----
 app.use((_req, res) => {
-  res.status(404).json({ message: '接口不存在' });
+  if (!res.headersSent) {
+    res.status(404).json({ message: '接口不存在' });
+  }
 });
 
 // ---- 全局错误处理 ----
@@ -44,9 +50,10 @@ app.use((err, _req, res, _next) => {
 async function start() {
   await connectDB();
   app.listen(PORT, () => {
-    console.log(`\n🚀 Git Report Generator API 已启动`);
+    console.log(`\n🚀 Git Report Generator 已启动`);
     console.log(`   📡 http://localhost:${PORT}`);
-    console.log(`   ❤️  /api/health\n`);
+    console.log(`   ❤️  /api/health`);
+    console.log(`   🌐 前端页面: http://localhost:${PORT}\n`);
   });
 }
 
