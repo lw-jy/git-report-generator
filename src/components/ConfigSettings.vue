@@ -574,7 +574,7 @@ function toggleRepo(fullName) {
  * 根据选中的平台拉取仓库列表
  */
 async function fetchMyRepos() {
-  if (!config.ghToken || !config.ghUser) return;
+  if (!platformConfig.value.token || !platformConfig.value.user) return;
 
   repoLoading.value = true;
   repoError.value = "";
@@ -586,11 +586,11 @@ async function fetchMyRepos() {
 
     if (platform === "github") {
       // GitHub: 获取用户仓库
-      url = `https://api.github.com/users/${config.ghUser}/repos?per_page=100&sort=updated&type=all`;
+      url = `https://api.github.com/users/${platformConfig.value.user}/repos?per_page=100&sort=updated&type=all`;
       const response = await fetch(url, {
         headers: {
           Accept: "application/vnd.github.v3+json",
-          Authorization: `Bearer ${config.ghToken}`,
+          Authorization: `Bearer ${platformConfig.value.token}`,
           "User-Agent": "git-report-generator",
         },
       });
@@ -616,7 +616,7 @@ async function fetchMyRepos() {
       url = `${host}/api/v4/projects?membership=true&per_page=100&order_by=updated_at`;
       const response = await fetch(url, {
         headers: {
-          "PRIVATE-TOKEN": config.ghToken,
+          "PRIVATE-TOKEN": platformConfig.value.token,
           "User-Agent": "git-report-generator",
         },
       });
