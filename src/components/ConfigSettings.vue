@@ -552,7 +552,7 @@ const filteredRepos = computed(() => {
  * 判断仓库是否已添加
  */
 function isRepoAdded(fullName) {
-  return (platformConfig.repos || []).includes(fullName);
+  return (platformConfig.value.repos || []).includes(fullName);
 }
 
 /**
@@ -560,12 +560,12 @@ function isRepoAdded(fullName) {
  */
 function toggleRepo(fullName) {
   if (isRepoAdded(fullName)) {
-    const idx = (platformConfig.repos || []).indexOf(fullName);
+    const idx = (platformConfig.value.repos || []).indexOf(fullName);
     if (idx !== -1) removeRepo(idx);
   } else {
-    if ((platformConfig.repos || []).length >= 10) return;
-    if (!platformConfig.repos) platformConfig.repos = [];
-    platformConfig.repos.push(fullName);
+    if ((platformConfig.value.repos || []).length >= 10) return;
+    if (!platformConfig.value.repos) platformConfig.value.repos = [];
+    platformConfig.value.repos.push(fullName);
     saveConfig();
   }
 }
@@ -664,27 +664,15 @@ async function fetchMyRepos() {
 function addRepo() {
   const raw = repoInput.value.trim().replace(/,$/, "");
   if (!raw) return;
+  if (!/^[\w.-]+\/[\w.-]+$/.test(raw)) return;
 
-  // 校验 owner/repo 格式
-  if (!/^[\w.-]+\/[\w.-]+$/.test(raw)) {
-    return;
-  }
-
-  // 去重
-  if ((platformConfig.repos || []).includes(raw)) {
+  if (!platformConfig.value.repos) platformConfig.value.repos = [];
+  const repos = platformConfig.value.repos;
+  if (repos.includes(raw) || repos.length >= 10) {
     repoInput.value = "";
     return;
   }
-
-  // 上限 10 个
-  if ((platformConfig.repos || []).length >= 10) {
-    return;
-  }
-
-  if (!platformConfig.repos) {
-    platformConfig.repos = [];
-  }
-  platformConfig.repos.push(raw);
+  repos.push(raw);
   repoInput.value = "";
   saveConfig();
 }
@@ -694,8 +682,8 @@ function addRepo() {
  * @param {number} idx
  */
 function removeRepo(idx) {
-  if (platformConfig.repos) {
-    platformConfig.repos.splice(idx, 1);
+  if (platformConfig.value.repos) {
+    platformConfig.value.repos.splice(idx, 1);
     saveConfig();
   }
 }
