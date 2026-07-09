@@ -181,7 +181,8 @@ async function generateReport() {
 
     if (!response.ok) {
       const errData = await response.json().catch(() => ({}));
-      throw new Error(errData.message || `请求失败 (${response.status})`);
+      const detail = errData.failedRepos ? `\n${errData.failedRepos.join('\n')}` : '';
+      throw new Error(`${errData.message || `请求失败 (${response.status})`}${detail}`);
     }
 
     const data = await response.json();
